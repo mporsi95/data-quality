@@ -1,1 +1,5 @@
 data/*
+.env
+spark-warehouse/
+teste.ipynb
+key.py
