@@ -1,10 +1,12 @@
 import os
+from datetime import datetime
 from dotenv import load_dotenv
 from pyspark.sql import SparkSession, DataFrame
 
-class dhzlib():
+class DhzLib():
     def __init__(self) -> None:
         self.spark = self.create_spark_session()
+        self.datetime_ = datetime
         self.load_env()
     
     def create_spark_session(self) -> SparkSession:
@@ -30,6 +32,47 @@ class dhzlib():
                 raise Exception("Error loading environment variables")
         except Exception as e:
             print(e)
+
+############################################
+# Data Quality Functions
+############################################
+
+    def check_interval_integrity(self, df: DataFrame, date_column: str) -> None:
+        try:
+            distinct_days = df.select(date_column).distinct().count()
+            print(f'Distinct days: {distinct_days}')
+            return
+        except Exception as e:
+            print(e)
+
+
+
+    # def CheckNulls(self, df: DataFrame) -> None:
+    #     try:
+    #         nulls = df.select([count(when(isnull(c), c)).alias(c) for c in df.columns]).collect()
+    #         print('Nulls check')
+    #         print(nulls)
+    #         return
+    #     except Exception as e:
+    #         print(e)
+
+    # def CheckDuplicates(self, df: DataFrame) -> None:
+    #     try:
+    #         duplicates = df.groupBy(df.columns).count().filter('count > 1').collect()
+    #         print('Duplicates check')
+    #         print(duplicates)
+    #         return
+    #     except Exception as e:
+    #         print(e)
+
+    # def CheckDataQuality(self, df: DataFrame) -> None:
+    #     self.CheckNulls(df)
+    #     self.CheckDuplicates(df)            
+
+
+############################################
+# Database Helper Functions
+############################################
 
     def test_connection_mysql(self) -> None:
         try:
