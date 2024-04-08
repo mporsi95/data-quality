@@ -14,6 +14,7 @@ class DhzLib():
     def __init__(self) -> None:
         self.spark = self.create_spark_session()
         self.date_ = date
+        self.F_ = F
 
 ############################################
 # Class initialization functions
@@ -47,7 +48,7 @@ class DhzLib():
             print(f'Checking interval integrity for column {date_column}')
             print(f'Interval: {lower_bound.strftime("%Y-%m-%d")} to {upper_bound.strftime("%Y-%m-%d")}')
 
-            df = self.read_mysql(table_name)
+            df = self.spark.read.table(table_name)
             days_between = (upper_bound - lower_bound).days + 1
             filtered_df = df.filter(F.col(date_column).cast('date').between(lower_bound, upper_bound))
             distinct_days = filtered_df.select(F.col(date_column).cast('date')).distinct().count()
@@ -78,7 +79,7 @@ class DhzLib():
         try:
             stats_df = []
             for table, column in tables.items():
-                df = self.read_mysql(table)
+                df = self.spark.read.table(table)
                 group_df = df.groupBy(F.from_utc_timestamp(
                                 F.col(column).cast('timestamp'), 'America/Sao_Paulo') \
                                     .cast('date').alias('date_')
@@ -114,7 +115,7 @@ class DhzLib():
                 else:
                     stats_df = stats_df.unionAll(stats)
 
-            self.write_mysql_utils(stats_df, 'tr_data_quality_stats', 'overwrite')
+            stats.createOrReplaceTempView('tr_data_quality_stats')
             return
         except Exception as e:
             print(e)
@@ -200,4 +201,30 @@ class DhzLib():
         except Exception as e:
             print(e)
     
+############################################
+# TEMPORARY
+############################################
+
+    def create_temp_tables(self) -> None:
+        files = ['../data/202401-capitalbikeshare-tripdata.csv', '../data/202402-capitalbikeshare-tripdata.csv']
+        raw_df = self.spark.read.csv(files, header=True, inferSchema=True)
+        raw_df.createOrReplaceTempView('raw_capital_bikeshare')
     
+        tr_df = raw_df.select(
+        raw_df.ride_id.alias('ride_id'),
+        raw_df.rideable_type.alias('rideable_type'),
+        F.from_utc_timestamp(raw_df.started_at.cast('timestamp'), 'America/Sao_Paulo').alias('started_at'),
+        F.from_utc_timestamp(raw_df.ended_at.cast('timestamp'), 'America/Sao_Paulo').alias('ended_at'),
+        raw_df.start_station_name.alias('start_station_name'),
+        raw_df.start_station_id.cast('int').alias('start_station_id'),
+        raw_df.end_station_name.alias('end_station_name'),
+        raw_df.end_station_id.cast('int').alias('end_station_id'),
+        raw_df.start_lat.cast('float').alias('start_lat'),
+        raw_df.start_lng.cast('float').alias('start_lng'),
+        raw_df.end_lat.cast('float').alias('end_lat'),
+        raw_df.end_lng.cast('float').alias('end_lng'),
+        raw_df.member_casual.alias('member_casual')
+        )
+
+        tr_df.createOrReplaceTempView('tr_capital_bikeshare')
+        return
