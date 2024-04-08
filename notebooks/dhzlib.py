@@ -1,20 +1,17 @@
 import os
 import warnings
 import pandas as pd
-import findspark
 
 from datetime import datetime, date
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql import functions as F
-from pyspark.sql.types import StructType, StructField, StringType, DateType, LongType, DoubleType
-
-findspark.init()
 
 class DhzLib():
     def __init__(self) -> None:
         self.spark = self.create_spark_session()
         self.date_ = date
         self.F_ = F
+        self.create_temp_tables()
 
 ############################################
 # Class initialization functions
