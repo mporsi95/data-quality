@@ -1,8 +1,7 @@
 import os
 import warnings
-import pandas as pd
 
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql import functions as F
 
@@ -51,18 +50,14 @@ class DhzLib():
             distinct_days = filtered_df.select(F.col(date_column).cast('date')).distinct().count()
             
             if distinct_days != days_between:
-                expected_dates = set(pd.date_range(start=lower_bound,
-                                                    end=upper_bound,
-                                                    freq='d') \
-                                        .map(lambda x: datetime.date(x)).tolist())
-                
+                expected_dates = {(lower_bound + timedelta(days=index)) for index in range(days_between)}
                 actual_dates = filtered_df.select(F.col(date_column).cast('date')).distinct().toPandas()[date_column].tolist()
                 dates_missing = expected_dates.symmetric_difference(actual_dates)
 
                 warnings.warn(f'''
-                            Integrity check failed for {date_column}.
-                            Expected {days_between} days, but got {distinct_days} days.
-                            Dates missing: {[date.strftime("%Y-%m-%d") for date in dates_missing]}
+        Integrity check failed for {date_column}.
+        Expected {days_between} days, but got {distinct_days} days.
+        Dates missing: {sorted([date.strftime("%Y-%m-%d") for date in dates_missing], reverse=True)}
                         ''')
                 return
             
@@ -71,6 +66,52 @@ class DhzLib():
         except Exception as e:
             print(e)
             return
+        
+    def check_if_updated(self, table: str, date_column: str, limit_date: datetime.date, schema: str = None):
+        """
+        Função que verifica se a tabela está atualizada
+        """
+        limit_date_str = limit_date.strftime('%Y-%m-%d')
+        table_path = f"{schema}.{table}" if schema else table
+        num_rows = self.spark.read.table(table_path).where(f"{date_column} > '{limit_date_str}'").count()
+        if num_rows > 0:
+            print(f"A tabela {table_path} está atualizada. Linhas após data mencionada: {num_rows}.")
+        else:
+            print(f"A tabela {table_path} está desatualizada")
+
+    def check_if_valid(self, table: str, valid_values: dict, schema: str = None):
+        check_functions = {
+            'string': self.check_if_valid_string
+        }
+        results = []
+        table_path = f"{schema}.{table}" if schema else table
+        df = self.spark.read.table(table_path)
+        table_dtypes = df.dtypes
+        for column in valid_values.keys():
+            column_dtype = [dtype for col, dtype in table_dtypes if col == column]
+            column_dtype = column_dtype[0] if column_dtype else None
+
+            if not column_dtype:
+                print(f"Column {column} not found in table {table_path}")
+                continue
+
+            if column_dtype not in check_functions.keys():
+                raise ValueError(f"Data type {column_dtype} not supported")
+            
+            status, invalid_values = check_functions[column_dtype](column, valid_values[column], df)
+            results.append([column, status, invalid_values])
+        headers = ["Nome da Coluna", "Status", "Outliers"]        
+        format_row = "{:>15}" * (len(headers))
+        print(format_row.format(*headers))
+        for column, status, invalid_values in results:
+            print(format_row.format(column, status, invalid_values))
+        return None
+            
+    def check_if_valid_string(self, column: str, valid_values: list, df: DataFrame):
+        invalid_values = df.filter(~df[column].isin(valid_values)).count()
+        if invalid_values > 0:
+            return 'ERROR', invalid_values
+        return 'OK', invalid_values
         
     def generate_stats_table(self, tables: dict) -> None:
         try:
@@ -112,7 +153,7 @@ class DhzLib():
                 else:
                     stats_df = stats_df.unionAll(stats)
 
-            stats.createOrReplaceTempView('tr_data_quality_stats')
+            stats_df.createOrReplaceTempView('tr_data_quality_stats')
             return
         except Exception as e:
             print(e)
@@ -224,4 +265,5 @@ class DhzLib():
         )
 
         tr_df.createOrReplaceTempView('tr_capital_bikeshare')
+        print('Temporary tables created')
         return
